@@ -7,7 +7,7 @@ pkg load instrument-control;
 SERVER_IP = "localhost";
 SERVER_PORT = 12345;
 CHUNK_SIZE = 65535;  % Tamanho máximo do pacote TCP (bytes)
-FILE_PATH = 'bootstat.dat';
+FILE_PATH = 'ch08_Lminmax3.90_4.00_lbd3.9000_c.dat';
 
 % Configuração do cliente TCP
 try
