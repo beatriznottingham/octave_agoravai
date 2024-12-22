@@ -1,45 +1,88 @@
 clear; clc; home;
-pkg load instrument-control; % Carrega o pacote 'instrument-control' para comunicação com dispositivos
 
-% Cria um cliente TCP
-tcpClient = tcpclient("10.10.1.1", 12344);  % IP e porta do servidor de destino
+% Carrega o pacote instrument-control para comunicação TCP
+pkg load instrument-control;
 
-disp("Lendo a mensagem do arquivo msg.txt...");
+% Configurações de conexão
+SERVER_IP = "localhost";
+SERVER_PORT = 12345;
+CHUNK_SIZE = 65535;  % Tamanho máximo do pacote TCP (bytes)
+FILE_PATH = 'bootstat.dat';
 
-% Lê o conteúdo do arquivo 'msg.txt' como uma string
-fid = fopen('msg.txt', 'r');  % Abre o arquivo para leitura
-if fid == -1
-    error("Erro ao abrir o arquivo msg.txt");
-end
-largeData = fscanf(fid, '%c');  % Lê todo o conteúdo do arquivo como uma string
-fclose(fid);  % Fecha o arquivo
-
-disp("Enviando mensagem para o servidor...");  % Mensagem de status
-
-% Define o tamanho máximo de cada pacote TCP para 65.535 bytes
-chunkSize = 65535;  % Tamanho máximo do pacote TCP (em bytes)
-
-% Calcula o número de pacotes necessários para enviar os dados
-numChunks = ceil(length(largeData) / chunkSize);
-
-pause(0.1);  % Pausa breve para evitar sobrecarga da CPU
-
-% Loop para enviar os dados em pacotes fragmentados
-for i = 1:numChunks
-    % Calcula os índices de início e fim do pacote
-    startIdx = (i - 1) * chunkSize + 1;  % Índice de início do pacote
-    endIdx = min(i * chunkSize, length(largeData));  % Índice de fim do pacote (garante que não ultrapasse o final dos dados)
-
-    % Extrai o bloco de dados correspondente ao pacote
-    chunk = largeData(startIdx:endIdx);
-
-    % Cria uma mensagem com a ordem dos pacotes (número atual e total)
-    message = sprintf("%d/%d|%s", i, numChunks, chunk);
-
-    % Envia o pacote TCP com a mensagem para o servidor
-    write(tcpClient, message);  % Envia a mensagem via TCP
-
-    pause(0.2);  % Pausa breve para evitar sobrecarga da rede
+% Configuração do cliente TCP
+try
+    tcpClient = tcpclient(SERVER_IP, SERVER_PORT);
+catch err
+    error('Erro ao criar cliente TCP: %s', err.message);
 end
 
-disp("Mensagem enviada com sucesso!");
+% Abre e verifica o arquivo
+try
+    fid = fopen(FILE_PATH, 'rb');
+    if fid == -1
+        error('Não foi possível abrir o arquivo: %s', FILE_PATH);
+    end
+
+    % Obtém tamanho do arquivo
+    fileInfo = stat(FILE_PATH);
+    fileSize = fileInfo.size;
+    numChunks = ceil(fileSize / CHUNK_SIZE);
+
+    % Inicializa contadores
+    bytesRead = 0;
+    bytesTotal = fileSize;
+
+    % Loop principal de transmissão
+    disp('Iniciando transmissão do arquivo...');
+    tic;  % Inicia cronômetro
+
+    while bytesRead < bytesTotal
+        for i = 1:numChunks
+            % Calcula tamanho do próximo chunk
+            remainingBytes = bytesTotal - bytesRead;
+            currentChunkSize = min(CHUNK_SIZE, remainingBytes);
+
+            % Lê chunk do arquivo
+            chunk = fread(fid, currentChunkSize, '*uint8');
+            if isempty(chunk)
+                break;
+            end
+
+            % Cria header para este chunk
+            header = uint8(sprintf("%d/%d|", i, numChunks))';
+
+            % Monta e envia pacote
+            packet = [header; chunk];
+            bytesWritten = write(tcpClient, packet);
+
+            bytesRead = bytesRead + length(chunk);
+
+            % Mostra progresso
+            progress = (bytesRead / bytesTotal) * 100;
+            fprintf('\rProgresso: %.1f%% (%d/%d bytes)', progress, bytesRead, bytesTotal);
+
+            % Pequena pausa para controle de fluxo
+            pause(0.01);
+        end
+    end
+
+    % Finalização e estatísticas
+    transmissionTime = toc;
+    transferRate = (bytesTotal / (1024 * 1024)) / transmissionTime;  % MB/s
+
+    fprintf('\n\nTransferência concluída:\n');
+    fprintf('Tempo total: %.2f segundos\n', transmissionTime);
+    fprintf('Taxa de transferência média: %.2f MB/s\n', transferRate);
+    fprintf('Total de bytes transferidos: %d\n', bytesRead);
+
+catch err
+    fprintf('\nErro durante a transferência: %s\n', err.message);
+end
+
+% Limpeza
+if exist('fid', 'var') && fid ~= -1
+    fclose(fid);
+end
+if exist('tcpClient', 'var')
+    clear tcpClient;
+end

@@ -1,12 +1,12 @@
-server - client
-
 pkg load instrument-control;  % Carregar o pacote instrument-control
 
-% Configurar o servidor para escutar na porta 12345
-serverPort = 12344;
+% Configurações iniciais:
+SERVER_IP = "localhost";
+SERVER_PORT = 12345;
 
-% Criar o servidor TCP para escutar na porta especificada
-server = tcpserver(serverPort);
+
+% Criar o servidor TCP:
+server = tcpserver(SERVER_PORT);
 
 disp("Servidor aguardando conexão...");
 
